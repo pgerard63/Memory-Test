@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>40-Second Image Memory Challenge</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fc;
+        }
+        .card-container {
+            perspective: 1000px;
+        }
+        .card {
+            width: 100%;
+            height: 100%;
+            transform-style: preserve-3d;
+            transition: transform 0.6s;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        .card.flipped {
+            transform: rotateY(180deg);
+        }
+        .card-face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .card-front {
+            background-color: #3b82f6; /* Blue 500 */
+            color: white;
+            border: 4px solid #1e40af; /* Blue 800 */
+            font-size: 2.5rem;
+            font-weight: 900;
+        }
+        .card-back {
+            background-color: #ffffff;
+            color: #1f2937;
+            transform: rotateY(180deg);
+            border: 4px solid #d1d5db;
+            padding: 4px; /* Space for the image */
+        }
+        .card-back img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover; /* Changed to cover for a better visual fit */
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+
+    <!-- Main Application Container -->
+    <div id="app" class="w-full max-w-lg bg-white p-6 rounded-2xl shadow-xl">
+        <h1 class="text-3xl font-extrabold text-gray-900 mb-4 text-center">Image Memory Challenge</h1>
+        <p class="text-sm text-gray-500 mb-6 text-center">Match 8 pairs in 40 seconds. Timer starts on first click!</p>
+
+        <!-- Status & Timer Display -->
+        <div class="flex justify-between items-center mb-6 p-3 bg-gray-100 rounded-xl">
+            <div id="timer-display" class="text-xl font-bold text-red-600">Time: 40s</div>
+            <div id="score-display" class="text-xl font-bold text-green-600">Pairs: 0 / 8</div>
+        </div>
+
+        <!-- Game Board -->
+        <div id="game-board" class="grid grid-cols-4 gap-3 md:gap-4 aspect-square">
+            <!-- Cards will be injected here by JavaScript -->
+        </div>
+
+        <!-- Game Message & Controls -->
+        <div id="message-container" class="mt-8 text-center">
+            <p id="game-message" class="text-lg font-semibold text-gray-700 mb-4">Click "Start Game" to begin.</p>
+            <button id="start-button" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition duration-300 shadow-md hover:shadow-lg">
+                Start Game
+            </button>
+        </div>
+
+        <!-- Hidden Loading/Error Message for Firebase (Good Practice) -->
+        <div id="auth-status" class="hidden text-xs text-center mt-4 text-gray-400">Authenticating...</div>
+    </div>
+
+    <script type="module">
+        // --- FIREBASE INITIALIZATION BOILERPLATE (MANDATORY) ---
+        // These global variables are provided by the canvas environment.
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        let db, auth, userId;
+        let isAuthReady = false;
+
+        const authStatusEl = document.getElementById('auth-status');
+
+        try {
+            if (Object.keys(firebaseConfig).length > 0) {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                setLogLevel('error'); 
+
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        authStatusEl.textContent = `Authenticated. User ID: ${userId.substring(0, 8)}...`;
+                        isAuthReady = true;
+                    } else {
+                        try {
+                            if (initialAuthToken) {
+                                await signInWithCustomToken(auth, initialAuthToken);
+                            } else {
+                                await signInAnonymously(auth);
+                            }
+                        } catch (e) {
+                            console.error("Firebase Auth Error:", e);
+                            authStatusEl.textContent = `Authentication failed: ${e.code}`;
+                        }
+                    }
+                });
+            } else {
+                authStatusEl.textContent = 'Firebase config missing. Running game standalone.';
+                isAuthReady = true;
+            }
+        } catch (e) {
+            console.error("Firebase Initialization Error:", e);
+            authStatusEl.textContent = `Initialization Error: ${e.message}`;
+        }
+        // --- END FIREBASE BOILERPLATE ---
+
+
+        // --- GAME LOGIC ---
+
+        const board = document.getElementById('game-board');
+        const timerDisplay = document.getElementById('timer-display');
+        const scoreDisplay = document.getElementById('score-display');
+        const messageEl = document.getElementById('game-message');
+        const startButton = document.getElementById('start-button');
+
+        // 8 unique images (real photos) using Picsum for visually distinct placeholders
+        const imageCategories = [
+            'https://picsum.photos/id/10/100/100', // Nature/Landscape
+            'https://picsum.photos/id/20/100/100', // Object/Abstract
+            'https://picsum.photos/id/30/100/100', // People/Portrait
+            'https://picsum.photos/id/40/100/100', // Architecture/Building
+            'https://picsum.photos/id/50/100/100', // Still life
+            'https://picsum.photos/id/60/100/100', // Water/Boat
+            'https://picsum.photos/id/70/100/100', // Cityscape
+            'https://picsum.photos/id/80/100/100'  // Abstract nature
+        ];
+        
+        let cards = [];
+        let flippedCards = [];
+        let matchedPairs = 0;
+        let initialTime = 40; 
+        let gameTimer = initialTime; 
+        let timerInterval;
+        let lockBoard = false;
+        let isTimerRunning = false; 
+
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        function createBoard() {
+            let icons = [...imageCategories, ...imageCategories];
+            icons = shuffleArray(icons);
+            cards = [];
+            board.innerHTML = ''; 
+
+            icons.forEach((icon, index) => {
+                const cardContainer = document.createElement('div');
+                cardContainer.classList.add('card-container');
+
+                const cardEl = document.createElement('div');
+                cardEl.classList.add('card', 'rounded-xl');
+                cardEl.dataset.icon = icon; 
+                cardEl.dataset.index = index;
+                cardEl.addEventListener('click', flipCard);
+
+                // Front of the card (the question mark)
+                const cardFront = document.createElement('div');
+                cardFront.classList.add('card-face', 'card-front', 'p-2');
+                cardFront.textContent = '?';
+
+                // Back of the card (the image)
+                const cardBack = document.createElement('div');
+                cardBack.classList.add('card-face', 'card-back');
+                
+                const img = document.createElement('img');
+                img.src = icon;
+                img.alt = `Image ID: ${index}`; // Descriptive alt text
+                // Fallback for image loading error
+                img.onerror = function() { this.src = 'https://placehold.co/100x100/ff0000/ffffff/png?text=FAIL'; };
+                
+                cardBack.appendChild(img);
+
+                cardEl.appendChild(cardFront);
+                cardEl.appendChild(cardBack);
+                cardContainer.appendChild(cardEl);
+                board.appendChild(cardContainer);
+                cards.push(cardEl);
+            });
+        }
+
+        function startTimer() {
+            if (!isTimerRunning) {
+                isTimerRunning = true;
+                timerInterval = setInterval(updateTimer, 1000);
+            }
+        }
+
+        function resetGame() {
+            clearInterval(timerInterval);
+            gameTimer = initialTime;
+            matchedPairs = 0;
+            flippedCards = [];
+            lockBoard = false;
+            isTimerRunning = false; 
+
+            timerDisplay.textContent = `Time: ${initialTime}s`;
+            scoreDisplay.textContent = `Pairs: 0 / 8`;
+            messageEl.textContent = 'Click "Start Game" to begin.';
+            startButton.classList.remove('hidden');
+
+            cards.forEach(card => card.classList.remove('flipped', 'pointer-events-none'));
+            cards.forEach(card => card.removeEventListener('click', flipCard));
+            board.innerHTML = '';
+        }
+
+        function updateTimer() {
+            gameTimer--;
+            timerDisplay.textContent = `Time: ${gameTimer}s`;
+
+            if (gameTimer <= 0) {
+                gameOver(false); // Time up!
+            }
+        }
+
+        function gameOver(isWin) {
+            clearInterval(timerInterval);
+            lockBoard = true;
+            isTimerRunning = false;
+            cards.forEach(card => card.removeEventListener('click', flipCard));
+
+            if (isWin) {
+                messageEl.textContent = '🎉 Congratulations! You found all pairs with time to spare!';
+            } else {
+                messageEl.textContent = '⏱️ Time is up! You did not find all the pairs. Try again.';
+            }
+
+            startButton.textContent = 'Play Again';
+            startButton.classList.remove('hidden');
+            startButton.removeEventListener('click', startGame);
+            startButton.addEventListener('click', resetAndStart);
+        }
+
+        function resetAndStart() {
+            resetGame();
+            startGame();
+        }
+
+        function startGame() {
+            startButton.classList.add('hidden');
+            messageEl.textContent = 'Ready! Click the first box to start the timer.';
+            createBoard();
+
+            // Enable clicking on the cards
+            cards.forEach(card => card.addEventListener('click', flipCard));
+        }
+
+        function flipCard(event) {
+            // Ignore clicks if the board is locked or if the card is already flipped/matched
+            if (lockBoard || event.target.closest('.card').classList.contains('flipped') || event.target.closest('.card').classList.contains('pointer-events-none')) {
+                return;
+            }
+
+            // Start timer on first click
+            if (matchedPairs === 0 && flippedCards.length === 0 && !isTimerRunning) {
+                startTimer();
+                messageEl.textContent = 'Time started! Match the pairs...';
+            }
+            
+            const card = event.target.closest('.card');
+            card.classList.add('flipped');
+
+            flippedCards.push(card);
+
+            if (flippedCards.length === 2) {
+                lockBoard = true; // Lock board while checking
+                checkForMatch();
+            }
+        }
+
+        function checkForMatch() {
+            const [card1, card2] = flippedCards;
+            const isMatch = card1.dataset.icon === card2.dataset.icon;
+
+            if (isMatch) {
+                disableCards(card1, card2);
+            } else {
+                // If no match, cards stay revealed for 2 seconds before flipping back.
+                messageEl.textContent = 'No match found! Cards closing in 2 seconds...';
+
+                setTimeout(() => {
+                    unflipCards(card1, card2);
+                    if (isTimerRunning) {
+                        messageEl.textContent = 'Keep going! Match the pairs...';
+                    }
+                }, 2000); // Changed from 3000ms to 2000ms
+            }
+        }
+
+        function disableCards(card1, card2) {
+            // Mark as matched and disable clicks permanently
+            card1.removeEventListener('click', flipCard);
+            card2.removeEventListener('click', flipCard);
+
+            // Matched cards stay fully visible ('flipped' state) and disabled.
+            card1.classList.add('pointer-events-none');
+            card2.classList.add('pointer-events-none');
+
+            matchedPairs++;
+            scoreDisplay.textContent = `Pairs: ${matchedPairs} / 8`;
+
+            resetFlippedCards();
+
+            if (matchedPairs === imageCategories.length) {
+                gameOver(true); // Game won!
+            }
+        }
+
+        function unflipCards(card1, card2) {
+            card1.classList.remove('flipped');
+            card2.classList.remove('flipped');
+            resetFlippedCards();
+        }
+
+        function resetFlippedCards() {
+            flippedCards = [];
+            lockBoard = false; // Unlock board for the next click
+        }
+
+        // Initial setup and event listener
+        createBoard(); 
+        startButton.addEventListener('click', startGame);
+
+    </script>
+</body>
+</html>

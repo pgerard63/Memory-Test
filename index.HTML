@@ -56,7 +56,65 @@
             object-fit: cover; /* Changed to cover for a better visual fit */
             border-radius: 8px;
         }
-    </style>
+    
+        /* --- STYLES FOR GAME OVER --- */
+        
+        /* Game Overlay covering the entire app container */
+        .game-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.9);
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            border-radius: 1rem;
+        }
+
+        /* FAILED Message Styles (Shaking and Dramatic) */
+        .fail-message {
+            animation: shake 0.5s infinite;
+            text-shadow: 0 0 15px rgba(255, 0, 0, 0.7);
+        }
+
+        @keyframes shake {
+            0% { transform: translate(1px, 1px) rotate(0deg); }
+            10% { transform: translate(-1px, -2px) rotate(-1deg); }
+            30% { transform: translate(3px, 2px) rotate(0deg); }
+            50% { transform: translate(-1px, 2px) rotate(-1deg); }
+            70% { transform: translate(3px, 1px) rotate(-1deg); }
+            100% { transform: translate(1px, -2px) rotate(-1deg); }
+        }
+        
+        /* Confetti Styles for Success */
+        .confetti {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            pointer-events: none;
+            z-index: 50;
+        }
+
+        .confetti-piece {
+            position: absolute;
+            background: currentColor; /* Inherits color from parent */
+            opacity: 0;
+            animation: falling 3s ease-in infinite;
+        }
+
+        @keyframes falling {
+            0% { opacity: 1; top: -10%; transform: rotate(0deg) }
+            100% { opacity: 0; top: 100%; transform: rotate(720deg) }
+        }
+
+</style>
 </head>
 <body class="min-h-screen flex items-center justify-center p-4">
 
@@ -364,4 +422,5 @@
 </body>
 
 </html>
+
 
